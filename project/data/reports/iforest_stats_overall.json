@@ -1,0 +1,10 @@
+{
+  "total_samples": 16265,
+  "outlier_count": 814,
+  "normal_count": 15451,
+  "outlier_ratio": 0.05004611128189364,
+  "score_label_corr": -0.04746466143451771,
+  "score_text_jump_corr": -0.9277830372080769,
+  "score_audio_jump_corr": -0.8542716097059304,
+  "score_vision_jump_corr": -0.6840758548112902
+}
