@@ -17,15 +17,15 @@ from models.cross_modal_attention import CrossModalAttentionLSTM
 from models.tensor_fusion import TensorFusionLSTM
 
 
-def build_model(name: str):
+def build_model(name: str, proj_dim: int = 64):
     if name == "early":
-        return EarlyFusionLSTM()
+        return EarlyFusionLSTM(proj_dim=proj_dim)
     if name == "gated":
-        return GatedFusionLSTM()
+        return GatedFusionLSTM(proj_dim=proj_dim)
     if name == "cross_attn":
-        return CrossModalAttentionLSTM()
+        return CrossModalAttentionLSTM(proj_dim=proj_dim)
     if name == "tensor":
-        return TensorFusionLSTM()
+        return TensorFusionLSTM(proj_dim=proj_dim)
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -155,6 +155,7 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--proj_dim", type=int, default=64)
     return parser.parse_args()
 
 
@@ -172,7 +173,7 @@ def main():
         num_workers=args.num_workers,
     )
 
-    model = build_model(args.model).to(device)
+    model = build_model(args.model, proj_dim=args.proj_dim).to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(
         model.parameters(),
