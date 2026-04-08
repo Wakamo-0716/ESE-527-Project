@@ -11,7 +11,35 @@ from scipy.stats import pearsonr
 from torch.utils.data import DataLoader
 
 from datasets import MoseiDataset
-from models.unimodal_lstm import UnimodalLSTM
+from models.early_fusion import EarlyFusionLSTM
+from models.gated_fusion import GatedFusionLSTM
+from models.cross_modal_attention import CrossModalAttentionLSTM
+from models.tensor_fusion import TensorFusionLSTM
+
+
+def build_model(
+    name: str,
+    proj_dim: int = 64,
+    hidden_dim: int = 128,
+    num_layers: int = 1,
+    dropout: float = 0.2,
+):
+    common_kwargs = {
+        "proj_dim": proj_dim,
+        "hidden_dim": hidden_dim,
+        "num_layers": num_layers,
+        "dropout": dropout,
+    }
+
+    if name == "early":
+        return EarlyFusionLSTM(**common_kwargs)
+    if name == "gated":
+        return GatedFusionLSTM(**common_kwargs)
+    if name == "cross_attn":
+        return CrossModalAttentionLSTM(**common_kwargs)
+    if name == "tensor":
+        return TensorFusionLSTM(**common_kwargs)
+    raise ValueError(f"Unknown model: {name}")
 
 
 def seed_everything(seed: int = 42) -> None:
@@ -21,36 +49,19 @@ def seed_everything(seed: int = 42) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def get_input_dim(modality: str) -> int:
-    if modality == "text":
-        return 300
-    if modality == "audio":
-        return 74
-    if modality == "vision":
-        return 35
-    raise ValueError(f"Unknown modality: {modality}")
 
-
-def get_modality_tensor(batch, modality: str, device):
-    if modality == "text":
-        return batch["text"].to(device)
-    if modality == "audio":
-        return batch["audio"].to(device)
-    if modality == "vision":
-        return batch["vision"].to(device)
-    raise ValueError(f"Unknown modality: {modality}")
-
-
-def train_one_epoch(model, loader, optimizer, criterion, device, modality):
+def train_one_epoch(model, loader, optimizer, criterion, device):
     model.train()
     total_loss = 0.0
 
     for batch in loader:
-        x = get_modality_tensor(batch, modality, device)
+        text = batch["text"].to(device)
+        audio = batch["audio"].to(device)
+        vision = batch["vision"].to(device)
         labels = batch["label"].to(device)
 
         optimizer.zero_grad()
-        preds = model(x)
+        preds = model(text, audio, vision)
         loss = criterion(preds, labels)
         loss.backward()
         optimizer.step()
@@ -60,17 +71,20 @@ def train_one_epoch(model, loader, optimizer, criterion, device, modality):
     return total_loss / len(loader.dataset)
 
 
-def evaluate(model, loader, criterion, device, modality):
+
+def evaluate(model, loader, criterion, device):
     model.eval()
     total_loss = 0.0
     all_preds, all_labels = [], []
 
     with torch.no_grad():
         for batch in loader:
-            x = get_modality_tensor(batch, modality, device)
+            text = batch["text"].to(device)
+            audio = batch["audio"].to(device)
+            vision = batch["vision"].to(device)
             labels = batch["label"].to(device)
 
-            preds = model(x)
+            preds = model(text, audio, vision)
             loss = criterion(preds, labels)
 
             total_loss += loss.item() * labels.size(0)
@@ -96,6 +110,7 @@ def evaluate(model, loader, criterion, device, modality):
         "rmse": float(rmse),
         "corr": float(corr),
     }
+
 
 
 def make_loaders(data_dir: str, batch_size: int, num_workers: int = 0):
@@ -131,6 +146,7 @@ def make_loaders(data_dir: str, batch_size: int, num_workers: int = 0):
     return train_loader, valid_loader, test_loader
 
 
+
 def save_checkpoint(model, optimizer, epoch, metrics, save_path: str):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     torch.save(
@@ -144,23 +160,27 @@ def save_checkpoint(model, optimizer, epoch, metrics, save_path: str):
     )
 
 
+
 def parse_int_list(raw: str):
     return [int(x.strip()) for x in raw.split(",") if x.strip()]
+
 
 
 def parse_float_list(raw: str):
     return [float(x.strip()) for x in raw.split(",") if x.strip()]
 
 
+
 def parse_str_list(raw: str):
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train unimodal LSTM regression on CMU-MOSEI")
-    parser.add_argument("--modality", type=str, default="text", choices=["text", "audio", "vision"])
+    parser = argparse.ArgumentParser(description="Train multimodal sentiment regression models on CMU-MOSEI")
+    parser.add_argument("--model", type=str, default="early", choices=["early", "gated", "cross_attn", "tensor"])
     parser.add_argument("--data_dir", type=str, default="data/processed")
-    parser.add_argument("--save_dir", type=str, default="checkpoints_unimodal")
+    parser.add_argument("--save_dir", type=str, default="checkpoints")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -168,27 +188,32 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--proj_dim", type=int, default=64)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--num_layers", type=int, default=1)
     parser.add_argument("--dropout", type=float, default=0.2)
 
+    # Grid search mode
     parser.add_argument("--search", action="store_true", help="Run grid search instead of a single training run")
-    parser.add_argument("--modalities", type=str, default="text", help="Comma-separated modalities for grid search")
+    parser.add_argument("--models", type=str, default="cross_attn", help="Comma-separated models for grid search")
     parser.add_argument("--batch_size_list", type=str, default="32", help="Comma-separated batch sizes")
     parser.add_argument("--lr_list", type=str, default="1e-3", help="Comma-separated learning rates")
     parser.add_argument("--weight_decay_list", type=str, default="1e-5", help="Comma-separated weight decays")
+    parser.add_argument("--proj_dim_list", type=str, default="64", help="Comma-separated projection dimensions")
     parser.add_argument("--hidden_dim_list", type=str, default="128", help="Comma-separated hidden dimensions")
     parser.add_argument("--num_layers_list", type=str, default="1", help="Comma-separated layer counts")
     parser.add_argument("--dropout_list", type=str, default="0.2", help="Comma-separated dropout values")
-    parser.add_argument("--results_csv", type=str, default="search_results_unimodal.csv", help="CSV file for search results")
+    parser.add_argument("--results_csv", type=str, default="search_results.csv", help="CSV file for search results")
     return parser.parse_args()
 
 
+
 def run_experiment(args, device, trial_config, trial_id=None):
-    modality = trial_config["modality"]
+    model_name = trial_config["model"]
     batch_size = trial_config["batch_size"]
     lr = trial_config["lr"]
     weight_decay = trial_config["weight_decay"]
+    proj_dim = trial_config["proj_dim"]
     hidden_dim = trial_config["hidden_dim"]
     num_layers = trial_config["num_layers"]
     dropout = trial_config["dropout"]
@@ -197,8 +222,8 @@ def run_experiment(args, device, trial_config, trial_id=None):
     if trial_id is not None:
         print(f"Trial {trial_id}")
     print(
-        f"modality={modality}, batch_size={batch_size}, lr={lr}, weight_decay={weight_decay}, "
-        f"hidden_dim={hidden_dim}, num_layers={num_layers}, dropout={dropout}"
+        f"model={model_name}, batch_size={batch_size}, lr={lr}, weight_decay={weight_decay}, "
+        f"proj_dim={proj_dim}, hidden_dim={hidden_dim}, num_layers={num_layers}, dropout={dropout}"
     )
 
     train_loader, valid_loader, test_loader = make_loaders(
@@ -207,9 +232,9 @@ def run_experiment(args, device, trial_config, trial_id=None):
         num_workers=args.num_workers,
     )
 
-    input_dim = get_input_dim(modality)
-    model = UnimodalLSTM(
-        input_dim=input_dim,
+    model = build_model(
+        model_name,
+        proj_dim=proj_dim,
         hidden_dim=hidden_dim,
         num_layers=num_layers,
         dropout=dropout,
@@ -223,7 +248,7 @@ def run_experiment(args, device, trial_config, trial_id=None):
     )
 
     ckpt_name = (
-        f"best_{modality}_bs{batch_size}_lr{lr}_wd{weight_decay}"
+        f"best_{model_name}_bs{batch_size}_lr{lr}_wd{weight_decay}_pd{proj_dim}"
         f"_hd{hidden_dim}_nl{num_layers}_do{dropout}.pt"
     )
     best_ckpt_path = os.path.join(args.save_dir, ckpt_name)
@@ -233,8 +258,8 @@ def run_experiment(args, device, trial_config, trial_id=None):
     patience_counter = 0
 
     for epoch in range(1, args.epochs + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, modality)
-        val_metrics = evaluate(model, valid_loader, criterion, device, modality)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        val_metrics = evaluate(model, valid_loader, criterion, device)
 
         print(
             f"Epoch {epoch:03d} | "
@@ -257,26 +282,18 @@ def run_experiment(args, device, trial_config, trial_id=None):
             print(f"Early stopping triggered at epoch {epoch}.")
             break
 
-    print(f"Best validation RMSE: {best_val_rmse:.4f} at epoch {best_epoch}")
-
     if Path(best_ckpt_path).exists():
         checkpoint = torch.load(best_ckpt_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
 
-    test_metrics = evaluate(model, test_loader, criterion, device, modality)
-    print(
-        f"Test Results | "
-        f"Loss: {test_metrics['loss']:.4f} | "
-        f"MAE: {test_metrics['mae']:.4f} | "
-        f"RMSE: {test_metrics['rmse']:.4f} | "
-        f"Corr: {test_metrics['corr']:.4f}"
-    )
+    test_metrics = evaluate(model, test_loader, criterion, device)
 
-    return {
-        "modality": modality,
+    result = {
+        "model": model_name,
         "batch_size": batch_size,
         "lr": lr,
         "weight_decay": weight_decay,
+        "proj_dim": proj_dim,
         "hidden_dim": hidden_dim,
         "num_layers": num_layers,
         "dropout": dropout,
@@ -288,27 +305,37 @@ def run_experiment(args, device, trial_config, trial_id=None):
         "test_corr": test_metrics["corr"],
     }
 
+    print(
+        f"Best validation RMSE: {best_val_rmse:.4f} at epoch {best_epoch}\n"
+        f"Test Results | Loss: {test_metrics['loss']:.4f} | MAE: {test_metrics['mae']:.4f} | "
+        f"RMSE: {test_metrics['rmse']:.4f} | Corr: {test_metrics['corr']:.4f}"
+    )
+    return result
+
+
 
 def run_grid_search(args, device):
-    modalities = parse_str_list(args.modalities)
+    models = parse_str_list(args.models)
     batch_sizes = parse_int_list(args.batch_size_list)
     lrs = parse_float_list(args.lr_list)
     weight_decays = parse_float_list(args.weight_decay_list)
+    proj_dims = parse_int_list(args.proj_dim_list)
     hidden_dims = parse_int_list(args.hidden_dim_list)
     num_layers_list = parse_int_list(args.num_layers_list)
     dropouts = parse_float_list(args.dropout_list)
 
-    all_trials = list(product(modalities, batch_sizes, lrs, weight_decays, hidden_dims, num_layers_list, dropouts))
+    all_trials = list(product(models, batch_sizes, lrs, weight_decays, proj_dims, hidden_dims, num_layers_list, dropouts))
     print(f"Total trials: {len(all_trials)}")
 
     results = []
-    for idx, (modality, batch_size, lr, weight_decay, hidden_dim, num_layers, dropout) in enumerate(all_trials, start=1):
+    for idx, (model_name, batch_size, lr, weight_decay, proj_dim, hidden_dim, num_layers, dropout) in enumerate(all_trials, start=1):
         seed_everything(args.seed)
         trial_config = {
-            "modality": modality,
+            "model": model_name,
             "batch_size": batch_size,
             "lr": lr,
             "weight_decay": weight_decay,
+            "proj_dim": proj_dim,
             "hidden_dim": hidden_dim,
             "num_layers": num_layers,
             "dropout": dropout,
@@ -330,6 +357,7 @@ def run_grid_search(args, device):
     print(f"\nSaved search results to: {args.results_csv}")
 
 
+
 def main():
     args = parse_args()
     seed_everything(args.seed)
@@ -341,12 +369,13 @@ def main():
         run_grid_search(args, device)
         return
 
-    print(f"Modality: {args.modality}")
+    print(f"Model: {args.model}")
     trial_config = {
-        "modality": args.modality,
+        "model": args.model,
         "batch_size": args.batch_size,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
+        "proj_dim": args.proj_dim,
         "hidden_dim": args.hidden_dim,
         "num_layers": args.num_layers,
         "dropout": args.dropout,
