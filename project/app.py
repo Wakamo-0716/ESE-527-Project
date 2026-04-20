@@ -248,16 +248,17 @@ elif page == "🔍 Result Inspector":
         with c1:
             backbone = st.selectbox("Backbone", ["LSTM", "Transformer"])
         with c2:
-            fusion = st.selectbox("Fusion Method", ["Cross-modal", "Gated", "Early"])
+            fusion = st.selectbox("Fusion Method", ["Cross-modal", "Gated", "Early", "Tensor"])
         with c3:
             # 模拟样本范围，实际可根据 npz 长度动态获取
             sample_idx = st.number_input("Sample ID (0-500)", min_value=0, max_value=500, value=42)
 
     # --- Step 2: Data Loading Logic ---
     fusion_to_model = {
-        "Cross-modal": "cross",
+        "Cross-modal": "cross_attn",
         "Gated": "gated",
         "Early": "early",
+        "Tensor": "tensor",
     }
 
     backbone_to_prefix = {
@@ -268,8 +269,8 @@ elif page == "🔍 Result Inspector":
     model_name = fusion_to_model[fusion]
     backbone_prefix = backbone_to_prefix[backbone]
 
-    npz_path = get_path(f"demo_outputs/{backbone_prefix}_{model_name}/pred_{model_name}.npz")
-    json_path = get_path(f"demo_outputs/{backbone_prefix}_{model_name}/result_{model_name}.json")
+    npz_path = get_path(f"scripts/demo_outputs/{backbone_prefix}_{model_name}/pred_{model_name}.npz")
+    json_path = get_path(f"scripts/demo_outputs/{backbone_prefix}_{model_name}/result_{model_name}.json")
 
     if os.path.exists(npz_path):
         data = np.load(npz_path)
@@ -307,27 +308,15 @@ elif page == "🔍 Result Inspector":
         st.divider()
 
         # --- Step 4: Lightweight Interpretability ---
-        v1, v2 = st.columns([2, 1])
-        with v1:
-            st.subheader("📊 Prediction vs. Truth Across Batch")
-            # 展示前后10个样本的对比趋势
-            start = max(0, sample_idx - 10)
-            end = min(len(preds), sample_idx + 10)
-            chart_data = pd.DataFrame({
-                "Prediction": preds[start:end].flatten(),
-                "Truth": labels[start:end].flatten()
-            })
-            st.line_chart(chart_data)
-
-        with v2:
-            st.subheader("💡 Modality Influence")
-            # 如果是 Gated Fusion，这里可以展示权重；否则展示模拟解释
-            if fusion == "Gated":
-                st.write("Visualizing learnable gate weights for this sample:")
-                weights = {"Text": 0.65, "Audio": 0.15, "Vision": 0.20}  # 示例数据
-                st.bar_chart(pd.Series(weights))
-            else:
-                st.info("Feature importance is distributed across the attention heads in this mode.")
+        st.subheader("📊 Prediction vs. Truth Across Batch")
+        # 展示前后10个样本的对比趋势
+        start = max(0, sample_idx - 50)
+        end = min(len(preds), sample_idx + 50)
+        chart_data = pd.DataFrame({
+            "Prediction": preds[start:end].flatten(),
+            "Truth": labels[start:end].flatten()
+        })
+        st.line_chart(chart_data)
 
     else:
         st.error(f"Missing prediction file: `{npz_path}`")
