@@ -1,0 +1,86 @@
+[
+  {
+    "model_a": "text+audio",
+    "model_b": "cross",
+    "metrics_a": {
+      "MAE": 0.6094645857810974,
+      "RMSE": 0.8067505359649658,
+      "Corr": 0.6886799163253298
+    },
+    "metrics_b": {
+      "MAE": 0.5975160598754883,
+      "RMSE": 0.7912092208862305,
+      "Corr": 0.7064727144594062
+    },
+    "interpretation": {
+      "delta_mae_definition": "delta = MAE(model_a) - MAE(model_b); positive means model_b is better",
+      "significant_by_bootstrap_ci": true
+    },
+    "bootstrap_mae_diff": {
+      "observed_delta_mae": 0.01194852590560913,
+      "ci_95_low": 0.005380025506019593,
+      "ci_95_high": 0.018402360379695892,
+      "bootstrap_mean_delta": 0.011915745705366135
+    },
+    "permutation_test_mae": {
+      "observed_mean_error_diff": 0.01194855011999607,
+      "p_value_two_sided": 0.0004
+    }
+  },
+  {
+    "model_a": "text+vision",
+    "model_b": "cross",
+    "metrics_a": {
+      "MAE": 0.6069496870040894,
+      "RMSE": 0.8068644404411316,
+      "Corr": 0.7017367783966447
+    },
+    "metrics_b": {
+      "MAE": 0.5975160598754883,
+      "RMSE": 0.7912092208862305,
+      "Corr": 0.7064727144594062
+    },
+    "interpretation": {
+      "delta_mae_definition": "delta = MAE(model_a) - MAE(model_b); positive means model_b is better",
+      "significant_by_bootstrap_ci": true
+    },
+    "bootstrap_mae_diff": {
+      "observed_delta_mae": 0.009433627128601074,
+      "ci_95_low": 0.000593748688697815,
+      "ci_95_high": 0.018298996984958647,
+      "bootstrap_mean_delta": 0.00946913195848465
+    },
+    "permutation_test_mae": {
+      "observed_mean_error_diff": 0.009433616884052753,
+      "p_value_two_sided": 0.0394
+    }
+  },
+  {
+    "model_a": "audio+vision",
+    "model_b": "cross",
+    "metrics_a": {
+      "MAE": 0.8064026832580566,
+      "RMSE": 1.0442150831222534,
+      "Corr": 0.3349629450797148
+    },
+    "metrics_b": {
+      "MAE": 0.5975160598754883,
+      "RMSE": 0.7912092208862305,
+      "Corr": 0.7064727144594062
+    },
+    "interpretation": {
+      "delta_mae_definition": "delta = MAE(model_a) - MAE(model_b); positive means model_b is better",
+      "significant_by_bootstrap_ci": true
+    },
+    "bootstrap_mae_diff": {
+      "observed_delta_mae": 0.20888662338256836,
+      "ci_95_low": 0.1940402388572693,
+      "ci_95_high": 0.22393896877765657,
+      "bootstrap_mean_delta": 0.20881638016700746
+    },
+    "permutation_test_mae": {
+      "observed_mean_error_diff": 0.20888666808605194,
+      "p_value_two_sided": 0.0
+    }
+  }
+]
