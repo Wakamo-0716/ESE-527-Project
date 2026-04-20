@@ -112,6 +112,26 @@ def evaluate(model, loader, criterion, device):
     }
 
 
+def collect_predictions(model, loader, device):
+    model.eval()
+    all_preds, all_labels = [], []
+
+    with torch.no_grad():
+        for batch in loader:
+            text = batch["text"].to(device)
+            audio = batch["audio"].to(device)
+            vision = batch["vision"].to(device)
+            labels = batch["label"].to(device)
+
+            preds = model(text, audio, vision)
+            all_preds.append(preds.detach().cpu())
+            all_labels.append(labels.detach().cpu())
+
+    all_preds = torch.cat(all_preds).numpy().reshape(-1)
+    all_labels = torch.cat(all_labels).numpy().reshape(-1)
+    return all_preds, all_labels
+
+
 
 def make_loaders(data_dir: str, batch_size: int, num_workers: int = 0):
     train_path = os.path.join(data_dir, "train_processed.npz")
@@ -204,6 +224,8 @@ def parse_args():
     parser.add_argument("--num_layers_list", type=str, default="1", help="Comma-separated layer counts")
     parser.add_argument("--dropout_list", type=str, default="0.2", help="Comma-separated dropout values")
     parser.add_argument("--results_csv", type=str, default="search_results.csv", help="CSV file for search results")
+    parser.add_argument("--save_predictions", action="store_true", help="Save test-set predictions after training")
+    parser.add_argument("--pred_dir", type=str, default="demo_outputs", help="Directory for saved prediction files")
     return parser.parse_args()
 
 
@@ -287,6 +309,30 @@ def run_experiment(args, device, trial_config, trial_id=None):
         model.load_state_dict(checkpoint["model_state_dict"])
 
     test_metrics = evaluate(model, test_loader, criterion, device)
+
+    if args.save_predictions:
+        preds, labels = collect_predictions(model, test_loader, device)
+        pred_subdir = os.path.join(args.pred_dir, f"lstm_{model_name}")
+        os.makedirs(pred_subdir, exist_ok=True)
+        np.savez(
+            os.path.join(pred_subdir, f"pred_{model_name}.npz"),
+            preds=preds,
+            labels=labels,
+        )
+        with open(os.path.join(pred_subdir, f"result_{model_name}.json"), "w") as f:
+            import json
+            json.dump(
+                {
+                    "mae": test_metrics["mae"],
+                    "rmse": test_metrics["rmse"],
+                    "corr": test_metrics["corr"],
+                    "best_epoch": best_epoch,
+                    "best_val_rmse": best_val_rmse,
+                },
+                f,
+                indent=2,
+            )
+        print(f"Saved predictions to: {pred_subdir}")
 
     result = {
         "model": model_name,
